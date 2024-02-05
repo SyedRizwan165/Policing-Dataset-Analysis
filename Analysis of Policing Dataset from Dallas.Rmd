@@ -1,0 +1,612 @@
+---
+title: "Analysis of a Policing Dataset From Dallas, Texas in 2016."
+#subtitle: 
+author: "Rizwan, Syed Muhammad"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, comment = NULL) 
+knitr::opts_chunk$set(echo = FALSE)
+library(dplyr)
+#library(rgdal)
+library(ggplot2)
+library(Rcpp)
+library(sf)
+library(tidyverse)
+library(ggmap)
+library(leaflet)
+library(MASS)
+library(ggplot2)
+library(corrplot)
+library(ggcorrplot)
+library(lubridate)
+library(scales)
+library(xts)
+library(ggridges)
+library(viridis)
+library(plotly)
+library(gridExtra)
+library(knitr)
+```
+
+## Problem Statement
+
+How do you measure justice? And how do you solve the problem of racism in policing? We look for factors that drive racial disparities in policing by analyzing census and police department deployment data. The ultimate goal is to inform police agencies where they can make improvements by identifying deployment areas where racial disparities exist and are not explainable by crime rates and poverty levels.
+
+## Project Overview
+
+The purpose of this project is to analyze policing data from Dallas in 2016 to gain insights into various factors such as race, location, type of force used, gender, and time series. The data set used for this analysis contains information about police interactions and incidents, including details on the demographics of the individuals involved, the locations where the incidents occurred, the type of force used, and the time of occurrence.
+
+The primary goal of this project is to conduct an in-depth exploration and analysis of the policing data from Dallas in 2016, with a focus on identifying any patterns or trends related to race, location, type of force used, gender, and time series. The analysis aims to provide insights into potential biases or disparities in policing practices, and to offer a data-driven perspective on the interactions between law enforcement and the community.
+
+## Exploratory Data Analysis
+Loading the data files
+```{r}
+
+# load the POLICING data
+#=========================
+# Set the working directory to the desired location where the data file is located
+setwd("/Users/rizwan/Library/CloudStorage/OneDrive-Personal/Documents")
+
+# Read the CSV file into a dataframe called 'df'
+df <- read.csv("37-00049-UOF-P_2016_prepped.csv", header = TRUE)
+
+# Print the contents of the dataframe 'df'
+head(df)
+
+# Create a copy of 'df' called 'df2' by removing the first row (header)
+df2 <- df[-1,]
+
+# Create a new dataframe 'df2_new' by applying a function to each column of 'df2' that removes any spaces
+df2_new <- as.data.frame(apply(df2, 2, function(x) gsub("\\s+", "", x)))
+
+# Rename column names in 'df2_new' to new names
+names(df2_new)[names(df2_new) == "SUBJECT_DESCRIPTION"] <- "subject_desc"
+names(df2_new)[names(df2_new) == "SUBJECT_GENDER"] <- "subj_gender"
+names(df2_new)[names(df2_new) == "SUBJECT_RACE"] <- "race_subj"
+names(df2_new)[names(df2_new) == "OFFICER_RACE"] <- "race_off"
+names(df2_new)[names(df2_new) == "TYPE_OF_FORCE_USED1"] <- "force_used1"
+names(df2_new)[names(df2_new) == "INCIDENT_DATE"] <- "inc_date"
+names(df2_new)[names(df2_new) == "INCIDENT_TIME"] <- "inc_time"
+```
+
+#### 1.Location of Incident
+
+Analyzing the location of crime incidents can provide valuable insights into crime hotspots and areas that may need increased attention from law enforcement. By examining the data for geographic patterns, such as the clustering of incidents in specific neighborhoods or areas, we can pinpoint areas that require targeted interventions to enhance safety and reduce crime rates.
+
+```{r}
+# Convert LOCATION_LATITUDE column to numeric
+df2_new$LOCATION_LATITUDE <- as.numeric(df2_new$LOCATION_LATITUDE)
+
+# Convert LOCATION_LONGITUDE column to numeric
+df2_new$LOCATION_LONGITUDE <- as.numeric(df2_new$LOCATION_LONGITUDE)
+
+# Create a leaflet map object
+int_map <- leaflet() %>%
+  addTiles() %>% # Add map tiles from default tile provider
+  addCircles( # Add circles to the map
+    data = df2_new, # Use df2_new as the data source
+    lat = ~LOCATION_LATITUDE, # Set latitude values from LOCATION_LATITUDE column
+    lng = ~LOCATION_LONGITUDE # Set longitude values from LOCATION_LONGITUDE column
+  )
+
+# Display the leaflet map
+int_map
+```
+
+The generated map offers an interactive interface that allows users to zoom in or out for a closer or broader view. On the map, blue circles are used to pinpoint the geographical locations, specifically the longitude and latitude, of incidents that took place in Dallas, USA throughout the entirety of 2016.
+
+#### 2. Type of Offences
+
+To begin our analysis of crime incident cases in Dallas, USA for the year 2016, we will examine the types of offences reported and their frequency. This information will provide us with an overview of the overall crime landscape in Dallas and help us identify any patterns or trends that may be prevalent.
+
+```{r}
+# Calculate the frequency of occurrences for each offense in the SUBJECT_OFFENSE column and store the result in 'offences'
+offences <- sort(
+  table(df2_new$SUBJECT_OFFENSE), # Calculate table of occurrences for SUBJECT_OFFENSE column
+  decreasing = TRUE # Sort the table in decreasing order
+)[1:10] # Select the top 10 offenses with highest frequency
+
+# Create a table using the kable function with specified column names and caption
+knitr::kable(
+  offences,
+  caption = "Top 10 offenses",
+  col.names = c("Offense", "Frequency")
+)
+```
+
+APOWW stands for Apprehension by Peace Officer Without Warrant and FV means Family voilence. Among all the offences, APOWW is the most popular offence.
+
+#### 3. Type of Force Used
+
+Next, we will identify the types of forces employed against the subject in order to determine the classification of the force used. This analysis will provide insights into whether the force used is dependent on the subject's race or gender
+
+```{r}
+# Calculate the frequency of occurrences for each force type in the TYPE_OF_FORCE_USED1 column and store the result in 'frc1'
+frc1 <- sort(
+  table(df2_new$force_used1), # Calculate table of occurrences for TYPE_OF_FORCE_USED1 column
+  decreasing = TRUE # Sort the table in decreasing order
+)[1:5] # Select the top 5 force types with highest frequency
+
+# Create a data frame for frc1 with columns 'no' and 'frc1'
+frc1 <- data.frame(
+  no = c(1, 2, 3, 4, 5), # Create a column 'no' with values 1 to 5
+  frc1 # Use frc1 as the data for the 'frc1' column
+)
+
+# Calculate the frequency of occurrences for the next 5 force types in the TYPE_OF_FORCE_USED1 column and store the result in 'frc2'
+frc2 <- sort(
+  table(df2_new$force_used1), # Calculate table of occurrences for TYPE_OF_FORCE_USED1 column
+  decreasing = TRUE # Sort the table in decreasing order
+)[6:10] # Select the 6th to 10th force types with highest frequency
+
+# Create a data frame for frc2 with columns 'no' and 'frc2'
+frc2 <- data.frame(
+  no = c(6, 7, 8, 9, 10), # Create a column 'no' with values 6 to 10
+  frc2 # Use frc2 as the data for the 'frc2' column
+)
+
+# Create a table using the kable function with specified column names and caption, combining frc1 and frc2 as a list
+knitr::kable(
+  list(frc1, frc2),
+  col.names = c("Rank", "Force type", "Frequency"),
+  caption = "TOP 10 TYPES OF FORCES USED AGAINST SUBJECT"
+)
+```
+
+The most frequently utilized types of force in the dataset include verbal commands, weapon display at person, holding suspect down, BD-Grabbed, and take down - arm. Additionally, a taser was also included in the analysis.
+
+#### 4. Type of Force Used Against Subject Gender and Race
+
+Our objective is to investigate whether the utilization of forces is influenced by the race or gender of the subject. We will create plots to illustrate the types of forces used in relation to the subject's gender and race.
+
+```{r}
+# Create a bar chart of the proportion of different types of force used based on subject gender
+force_used <- ggplot(
+  data = subset(
+    df2_new,
+    subj_gender != "Unknown" & subj_gender != "NULL" & (
+      force_used1 == "VerbalCommand" |
+      force_used1 == "WeapondisplayatPerson" |
+      force_used1 == "HeldSuspectDown" |
+      force_used1 == "BD-Grabbed" |
+      force_used1 == "TakeDown-Arm" |
+      force_used1 == "Taser"
+    )
+  ),
+  aes(x = subj_gender, y = 10, fill = force_used1)
+) +
+  geom_bar(
+    stat = "identity",
+    position = "fill"
+  ) + # Create a bar chart with 'TYPE_OF_FORCE_USED1' on the x-axis, '10' on the y-axis (for proportional scaling), and 'fill' aesthetics for type of force
+  scale_y_continuous(
+    labels = scales::percent
+  ) + # Scale the y-axis labels to percentages
+  xlab("Subject gender") + # Add x-axis label
+  ylab("Proportion") + # Add y-axis label
+  guides(fill = guide_legend(title = "Type of force")) + # Add a legend with a title for the fill aesthetics
+  ggtitle("Type of force used on genders") + # Add title to the plot
+  scale_fill_brewer(palette = "magma") # Use the 'magma' color palette for the fill aesthetics
+
+# Create a bar chart of the proportion of different types of force used based on subject race
+force_used_on_race <- ggplot(
+  data = subset(
+    df2_new,
+    race_subj != "NULL" & (
+      force_used1 == "VerbalCommand" |
+      force_used1 == "WeapondisplayatPerson" |
+      force_used1 == "HeldSuspectDown" |
+      force_used1 == "BD-Grabbed" |
+      force_used1 == "TakeDown-Arm" |
+      force_used1 == "Taser"
+    )
+  ),
+  aes(x = race_subj, y = 10, fill = force_used1)
+) +
+  geom_bar(
+    stat = "identity",
+    position = "fill"
+  ) + # Create a bar chart with 'TYPE_OF_FORCE_USED1' on the x-axis, '10' on the y-axis (for proportional scaling), and 'fill' aesthetics for type of force
+  scale_y_continuous(
+    labels = scales::percent
+  ) + # Scale the y-axis labels to percentages
+  xlab("Subject race") + # Add x-axis label
+  ylab("Proportion") + # Add y-axis label
+  guides(fill = guide_legend(title = "Type of force")) + # Add a legend with a title for the fill aesthetics
+  scale_x_discrete(labels = c("AI", "As", "Bl", "Hi", "Ot", "Wh")) + # Customize x-axis labels for subject race
+  ggtitle("Type of force used on races") + # Add title to the plot
+  scale_fill_brewer(palette = "magma") # Use the 'magma' color palette for the fill aesthetics
+
+# Arrange the two plots in a grid with 1 column and 2 rows
+grid.arrange(force_used, force_used_on_race, ncol=2)
+```
+
+The graphs above illustrate the proportion of force types used for different genders and races of subjects. It can be observed that males are more likely to have a weapon displayed at them compared to females, and tasers are used more frequently on males than on females. Verbal commands are mostly used with female(subject), followed by take down-arm.
+
+In the next graph, the X-axis uses abbreviations for each race (AI for American Indian, As for Asian, Bl for Black, Hi for Hispanic, Ot for Other, Wh for White) to save space. However, it's important to note that the data for American Indian and Asian suspects is limited, with only 1 American Indian and 5 Asian suspects in the dataset, which may not accurately reflect real-life trends for these races.
+
+Regarding race, the likelihood of suspects from Black, White, and Hispanic racial groups having a weapon displayed at them is relatively similar. However, White and Black suspects are more likely to be subjected to the use of tasers, whereas Hispanic suspects are more likely to be grabbed. Furthermore, White and Black suspects are more likely to be held down compared to Hispanic suspects. The most frequently used type of force on suspects from all three racial groups is verbal command, with Hispanic suspects being subjected to it most frequently.
+
+#### 5. Crimes Committed by Each Subject Race
+
+Which subject race has a higher frequency of committing crimes? By determining the number of offenses committed by each race, we can gain a clearer understanding of which race is more likely or less likely to engage in criminal activities.
+
+```{r}
+# Calculate the percentage of occurrences for each race in the SUBJECT_RACE column
+perc <- format(round(as.numeric(sort(100 * table(df2_new$race_subj, exclude = c("NULL", "CitRace")) / sum(table(df2_new$race_subj, exclude = c("NULL", "Citace"))), decreasing = TRUE)), 2),nsmall = 2)
+
+# Calculate the frequency of occurrences for each race in the SUBJECT_RACE column
+perc2 <- sort(
+  table(df2_new$race_subj, exclude = c("NULL", "CitRace")),
+  decreasing = TRUE)
+
+# Create a data frame combining the calculated percentages and frequencies
+df3 <- data.frame(perc2, perc)
+
+# Create a table using the kable function with specified column names and caption
+kable(df3,
+  title = "Offences Committed By Each Race",
+  col.names = c(" Subject Race", "Total Crimes", "Percentage(%)"))
+```
+
+The table presents an overview of the racial demographics of the subjects involved in the incidents. It shows that a majority of the incidents involved subjects identified as Black, comprising more than half of the total cases. Hispanic subjects accounted for approximately 22% of the offenses, while White subjects accounted for 20% of the total offenses. These findings provide insights into the racial composition of the crime incidents in the dataset.
+
+#### 6. Relation Between Officer Race and Subject Race In terms of Injuring The Subject
+
+It is important to find out the relation between officer race and subject race in terms of injuring the subject. A bar plot shows the correlation.
+
+```{r}
+# Create a bar plot using ggplot
+race <- ggplot(
+  data = subset(df2_new, SUBJECT_INJURY != "Yes" & race_subj != "NULL"), # Subset the data to exclude cases where SUBJECT_INJURY is "Yes" and SUBJECT_RACE is "NULL"
+  aes(x = race_off, y = 10, fill = race_subj) # Set the x-axis to OFFICER_RACE, y-axis to 10 (for proportion), and fill color to SUBJECT_RACE
+) +
+  geom_bar(stat = "identity", position = "fill") + # Use geom_bar with "identity" stat to create a bar plot with proportions and "fill" position to stack the bars
+  scale_y_continuous(labels = scales::percent) + # Set y-axis labels to percentages
+  xlab("Officer race") + ylab("Proportion") + # Set x-axis and y-axis labels
+  guides(fill = guide_legend(title = "Subject race")) + # Add a legend for fill color with title "Subject race"
+  ggtitle("Correlation between officer race and subject race \n in terms of injuring the subject") + # Set the plot title
+  scale_fill_brewer(palette = "OrRd", direction = -1) # Use the OrRd color palette for fill colors with reversed direction
+
+# Flip the plot coordinates to create a horizontal bar plot
+race + coord_flip()
+```
+
+The graph depicts the relationship between officer races and subject races in incidents where injuries were reported ("subject_injury" = "yes"). It should be noted that the data was filtered to include only cases with reported injuries and that the representation of American Indian officers is limited to only 8 out of 2384 officers in the dataset, which may not accurately reflect real-life trends for this race.
+
+The graph highlights that in cases involving Hispanic suspects, injuries were predominantly caused by Hispanic officers. Asian officers were mostly associated with injuries to White suspects, while races marked as "Other", as well as Black or White officers, were responsible for injuries to Black suspects. These findings provide insights into the racial dynamics of injuries in the incidents analyzed, indicating potential patterns and trends in officer-subject interactions based on race.
+
+#### 7. Time Series Analysis
+
+By analyzing the data based on temporal factors such as day of the week, month, or time of day, we can identify patterns in crime incidents. This information can offer insights into when and where crimes are more likely to occur, aiding law enforcement agencies in allocating resources more effectively and improving their response strategies.
+
+```{r}
+#Convert INCIDENT_DATE to Date format
+df2_new$inc_date <- as.Date(df2_new$inc_date, format = "%m/%d/%Y")
+
+#Replace "00" in the date column with "20" to get the correct year
+df2_new$inc_date <- gsub("00","20",df2_new$inc_date)
+
+#Convert date column to Date format
+df2_new$inc_date <- as.Date(df2_new$inc_date, format = "%Y-%m-%d")
+
+#Format INCIDENT_TIME to 24-hour format
+df2_new$inc_time<- format(strptime(df2_new$inc_time, "%I:%M:%S %p"), "%H:%M:%S")
+
+#Get the month name from INCIDENT_DATE
+df2_new$inc_month<- months(as.Date(df2_new$inc_date))
+
+#Get the month number from INCIDENT_DATE
+df2_new$INC_month <-format(df2_new$inc_date,"%m")
+
+#Extract the hour from INCIDENT_TIME and convert it to numeric format
+df2_new$inc_hour <- as.numeric(substr(df2_new$inc_time, 0, 2))
+
+#Get the day of the week from INCIDENT_DATE
+df2_new$inc_day <- wday(df2_new$inc_date, label=TRUE)
+
+#Extract the hour from INCIDENT_TIME and store it as a string
+df2_new$INC_hour <- substr(df2_new$inc_time, 0, 2)
+
+#Extract the date from INCIDENT_DATE and store it as a string
+df2_new$INC_date<- substr(df2_new$inc_date, 9, 10)
+
+#Grouping and summarizing data for yearly incident counts
+year <- df2_new %>%
+group_by(inc_date, inc_month, inc_day) %>%
+summarize(count = n())
+
+#Grouping and summarizing data for monthly incident counts
+month <- df2_new %>%
+group_by(INC_month) %>%
+summarize(count = n())
+
+#Grouping and summarizing data for daily incident counts by hour
+day <- df2_new %>%
+group_by(inc_day, inc_hour) %>%
+summarize(count = n())
+
+#Extracting hour from INCIDENT_TIME and storing it as a string
+df2_new$INC_hour <- substr(df2_new$inc_time, 0, 2)
+
+#Grouping and summarizing data for hourly incident counts
+df2_new %>%
+group_by(INC_hour) %>%
+summarize(avg = n()) -> hour
+
+#Creating a line plot for yearly incident counts
+p1 <- ggplot(data = year, aes(inc_date, count)) +
+geom_line(size=0.6, col="gray") +
+geom_smooth(method = "loess", color = "purple", span = 1/5) +
+theme_bw() +
+labs(x="Months", y="Total Incidents", title="Year vs Incidents")
+
+#Creating a line plot for monthly incident counts
+p2 <- ggplot(month, aes(x=INC_month, y=count, group=1)) +
+geom_line() +
+geom_line(size=0.8, colour="darkblue") +
+labs(x="Months", y="Total Incidents", title="Months vs Incident Rates") +
+theme_bw()
+
+#Creating a line plot for hourly incident counts
+p3 <- ggplot(hour, aes(x=INC_hour, y=avg, group="count")) +
+geom_line(size=0.8, colour="yellow") +
+labs(x="Hours", y="Total Incidents", title="Hours vs Incident Rates") +
+theme_bw() +
+theme(axis.text.x=element_text(angle=-90, vjust=0.5)) +
+labs(x="Hours", y="count") +
+theme_bw()
+
+#Creating a density plot for incident count distribution
+p4 <- ggplot(year, aes(count)) +
+geom_density(alpha=0.5, colour="black", fill="lightgreen") +
+labs(x="Total incidents", y="Density", title="Distribution of Incident Rates") +
+theme_bw()
+
+#Arranging all the plots in a 2x2 grid
+grid.arrange(p1, p2, p3, p4, nrow=2)
+
+```
+
+Upon analyzing the data, it appears that the number of recorded incidents decreased throughout 2016. The highest peaks were observed between 17:00 and 20:00, with a significant spike at 02:00 where nearly 150 incidents were reported. The lowest readings were recorded in the early morning hours between 4:00 and 10:00, particularly around 07:00.
+
+In terms of monthly distribution, March had the highest number of reported incidents with around 259 occurrences, followed by 250 incidents in February. December, on the other hand, had the fewest recorded incidents with only 97 events.
+
+The density plot displays the overall distribution counts of offenses, revealing a right skewness in the annual occurrence count. Incidents with more than 25 occurrences per day are less prominent, with a noticeable peak observed.
+
+#### 8. Frequency Of Incidents According to Months and Days
+
+To conduct a more detailed analysis, we will create a graph that depicts the incidents in relation to both the month and the day of the month. This will allow us to identify which specific days and months experienced a higher frequency of crime incidents.
+
+```{r}
+#Grouping the data by INCIDENT_DAY and INC_MONTH columns and calculating the count of occurrences}
+month_day <-  df2_new %>%
+  group_by(inc_day, INC_month) %>%
+  summarize(count = n())
+
+# Removing rows with missing values
+month_day <- month_day[complete.cases(month_day), ]
+
+# Creating a tile plot with INCIDENT_DAY on the x-axis, INC_MONTH on the y-axis, and count as fill color
+# Adding text labels for count on each tile
+# Customizing the y-axis labels to display month names
+# Adding axis labels and title
+# Customizing the fill color scale
+ggplot(month_day, aes(x= inc_day, y=INC_month,fill = count)) + 
+  geom_tile( ) + 
+  geom_text(aes(inc_day, INC_month, label = count), color = "black", size = 4) + 
+  scale_y_discrete("Months",labels=c("January","February", "March", "April","May", "June","July","August", "September","October","November","December")) + 
+  labs(x="Days of Month", y= "Months", title=" Incident Rates across Days and Months")+
+  scale_fill_gradientn(colors = c("blue","white","red"))
+```
+
+Upon examination of the graph, it is evident that March and February had the highest number of reported incidents. Additionally, Thursdays, Fridays, Saturdays, and Sundays were the most common days of the month on which incidents occurred.
+
+#### 9. Measure of Incident According to Month and Division
+
+Next, we will create plots to visualize the incident rates for each of the 7 divisions in Dallas. The x-axis will represent the months, while the y-axis will indicate the count of incidents. This will allow us to gain a clear understanding of how the incident rates vary across the divisions over the course of the months.
+
+```{r}
+# Grouping the data by INC_MONTH and DIVISION columns and calculating the count of occurrences
+div_area <-  df2_new %>%
+  group_by(INC_month,DIVISION) %>%
+  summarize(count = n())
+
+# Creating a line plot with INC_MONTH on the x-axis, count on the y-axis, and color-coded by DIVISION
+# Using facet_wrap to create separate panels for each DIVISION
+# Removing the legend
+# Adding axis labels and title
+ggplot(div_area, aes(x = INC_month, y = count, group = 'count'))  + 
+  geom_line( aes(color= DIVISION), size = 0.9) + 
+  facet_wrap(~ DIVISION,ncol=3) + 
+  theme(legend.position="none") + 
+  labs(x="Months", y= "Incident Counts", title="Division vs Monthly Incident")
+```
+
+The Central Division stands out as having the highest number of reported crimes, consistently surpassing 40 incidents. On the other hand, the Northwest Division displays low incident rates with a declining trend. The South Central, Southeast, and Southwest Divisions exhibit a sharp decline in trend. The Northeast and North Central Divisions show a relatively neutral trend, while other divisions also show a decrease in incidents towards the end of the year. In fact, December has the lowest number of incidents across all divisions, except for Northeast, which shows a consistent and steady intermittent trend.
+
+When examining the timing of incidents across each division, interesting patterns emerge. In the Central Division, two peaks in incidents are observed at March and June, with approximately 50 incidents each. In the South Central and Southeast Divisions, the majority of incidents occur around September. In the Southwest Division, the highest number of incidents were reported around July. Notably, there are no prominent peaks in incidents during daytime hours, but rather notable peaks occurring during evenings to late nights in some divisions.
+
+#### 10. Subject Description On The Basis Of Time
+
+We will now create plots to analyze the subject descriptions in relation to time, in order to identify any trends or insights. The subject descriptions will be plotted on one axis, while the time series data across the year will be plotted on another axis. This will allow us to visually understand the distribution of subject descriptions over time, as depicted in the graph below.
+
+```{r}
+#Create a summary table by grouping the data frame df2_new by INCIDENT_DATE, INCIDENT_MONTH, INCIDENT_DAY, and SUBJECT_DESCRIPTION, and calculating the count of occurrences for each group
+sub_desc <- df2_new %>%
+group_by(inc_date, inc_month, inc_day, subject_desc) %>%
+summarize(count = n())
+
+#Create a density ridges plot using ggplot2
+ggplot(subset(sub_desc, subject_desc != "FD-MotorVehicle" & subject_desc != "NULL" & subject_desc != "FD-Animal" & subject_desc != "Animal"), aes(x = inc_date, y = subject_desc, fill = ..x..)) +
+
+#Add density ridges plot layer with specified aesthetics and settings
+geom_density_ridges_gradient(size=0.4, scale = 0.9, rel_min_height = 0.02, gradient_lwd = 0.9, bandwidth = 4, alpha = 1.2) +
+
+#Set fill scale using viridis color palette with custom name and direction
+scale_fill_viridis(name = "Tail probability", direction = -1) +
+
+#Set plot title and axis labels
+ggtitle("SUBJECT DESCRIPTION") +
+labs(x = "Months", y = "Subject Description", fill = "Humidity") +
+
+#Set theme for density ridges plot
+theme_ridges(font_size = 8, grid = TRUE) +
+
+#Remove legend
+theme(legend.position = "none") 
+
+```
+
+The subject descriptions of "Mentally Unstable" and "Drugs and Alcohol" exhibit consistent stability throughout the year. On the other hand, "Marijuana" shows sporadic peaks, while "Suspect with Gun and Weapon" displays recurring peaks. Despite the intermittent patterns, incidents involving "Suspect with Gun and Weapon" tend to have high occurrences or peaks when they do occur. Overall, "Drugs and Alcohol" are crimes that are fairly evenly distributed across the year, while "Marijuana" exhibits multiple peaks in an intermittent fashion.
+
+#### 11. Relation Between Officer Race and Subject Race According to Incident Month
+
+Gaining insights into potential racial disparities within the criminal justice system can be achieved through data analysis. This involves examining the race of officers and subjects involved in crime incidents, as well as evaluating the outcomes of these incidents. By conducting such analysis, we can identify any discrepancies in the handling of crime cases based on race, with the aim of addressing and mitigating any potential biases.
+
+We will create a graph that shows the incidents categorized by the race of the officers and the race of the subjects, plotted against the months in which the incidents occurred. This will help us determine which month had the highest number of incidents and which officer races were involved in handling cases against subjects of different races.
+
+```{r}
+# Grouping the data by SUBJECT_RACE and INC_MONTH columns and calculating the count of occurrences
+subject_race <-  df2_new %>%
+  group_by(race_subj, INC_month) %>%
+  summarize(count = n())
+
+# Grouping the data by OFFICER_RACE and INC_MONTH columns and calculating the count of occurrences
+officer_race <-  df2_new %>%
+  group_by(race_off, INC_month) %>%
+  summarize(count = n())
+
+# Removing rows with missing values
+subject_race <- subject_race[complete.cases(subject_race), ]
+officer_race <- officer_race[complete.cases(officer_race), ]
+
+# Creating a tile plot for OFFICER_RACE with INC_MONTH on the x-axis, OFFICER_RACE on the y-axis, and count as fill color
+# Adding text labels for count on each tile
+# Customizing axis labels
+# Customizing the fill color scale
+d1 <- ggplot(officer_race, aes(x= INC_month, y=race_off,fill = count)) + 
+  geom_tile( ) + 
+  geom_text(aes(INC_month, race_off, label = count), color = "black", size = 4) + 
+  labs(x="INCIDENT MONTH", y= "RACE OF OFFICER")+
+  scale_fill_gradientn(colours = c("red", "white", "blue"))
+
+# Creating a tile plot for SUBJECT_RACE with INC_MONTH on the x-axis, SUBJECT_RACE on the y-axis, and count as fill color
+# Adding text labels for count on each tile
+# Customizing axis labels
+# Customizing the fill color scale
+d2 <- ggplot(subject_race, aes(x= INC_month, y=race_subj,fill = count)) + 
+  geom_tile( ) + 
+  geom_text(aes(INC_month, race_subj, label = count), color = "black", size = 4) + 
+  labs(x="INCIDENT MONTH", y= "RACE OF SUBJECT")+
+  scale_fill_gradientn(colours = c("red", "white", "blue"))
+
+# Arranging the two plots in a grid with two rows and one column
+grid.arrange(d1, d2, nrow=2, ncol=1)
+```
+
+It appears that incidents involving Black subjects are often handled by White officers, indicating a high likelihood of this racial dynamic in such cases.
+
+#### 12. Measure of Central Tendency of Top 3 Subject Race
+
+Measures of central tendency, such as quartile ranges and median, provide valuable insights into the distribution of data, and the box plot is a visual tool that helps analyze incident counts across months for different subject races and incident rates.
+
+The box plot in the first window displays incident counts for the Black, White, and Hispanic races, showing how the incidents are distributed across different months. Other races, such as Asians and Americans, are not included in the figure due to their significantly lower involvement in crimes. By examining this box plot, we can gain a deeper understanding of the range, characteristics, and potential patterns or trends in incident rates for these races across different months.
+
+```{r}
+# Filtering the data to include only rows where SUBJECT_RACE is "Black", "White", or "Hispanic"
+df2_new %>%
+  filter(race_subj == "Black" | race_subj == "White" | race_subj == "Hispanic") %>%
+  # Grouping the data by INCIDENT_DATE, INC_MONTH, and SUBJECT_RACE columns and calculating the count of occurrences
+  group_by(inc_date, INC_month, race_subj) %>%
+  summarize(avg = n()) -> date_h
+
+# Creating a box plot for INCIDENT_RATE with INC_MONTH on the x-axis, avg on the y-axis, and fill color by INC_MONTH
+# Customizing axis labels, title, and theme
+# Using facet_wrap to create separate box plots for each SUBJECT_RACE
+# Setting y-axis limits using coord_cartesian to focus on a specific range of values
+d3 <- ggplot(date_h, aes(x = INC_month, y = avg, fill = INC_month)) +
+  geom_boxplot() +
+  labs(x = 'Months', y = 'Incident Rate', 
+       title = paste("Box Plot of Incidents Among Top 3 SUBJECT RACE")) +
+  theme(legend.position = "none") +
+  facet_wrap(~ race_subj) +
+  coord_cartesian(ylim = c(1, 12))
+
+# Displaying the created plot
+d3
+
+```
+
+The graphical representation of the data reveals notable trends in crime incidents involving different racial groups. Specifically, incidents involving Black individuals are consistently higher, peaking in March and May, and showing lower ranges in July and October. Similarly, incidents involving Hispanics also peak in March and January, with lower ranges in June and October. In contrast, incidents involving White individuals tend to have higher ranges in September and lower ranges in June.
+
+Based on the analysis of the graphs, it can be concluded that incidents involving Black and Hispanic individuals tend to be more frequent during the month of March, while incidents involving White individuals show higher ranges in September
+
+#### 13. Relation Between Officer Injury and Subject Arrested
+
+We would like to investigate if there is any correlation between officer injuries and the subjects who were arrested. To do so, we will create a scatter plot to visualize the data.
+
+```{r}
+# Creating a scatter plot using ggplot function from ggplot2 package
+# Specifying data as df2_new data frame
+# Specifying x-axis as OFFICER_INJURY column from df2_new data frame
+# Specifying y-axis as SUBJECT_WAS_ARRESTED column from df2_new data frame
+sc_data <- ggplot(data = df2_new, aes(x = df2_new$OFFICER_INJURY, y = df2_new$SUBJECT_WAS_ARRESTED)) +
+  geom_point()
+
+# Customizing plot labels, including title, x-axis label, and y-axis label
+print(sc_data + labs(
+  title = "Scatter Plot of Officer Injury and Subject Was Arrested",
+  y = "Subject Was Arrestred",
+  x = "Officer Injury"
+))
+```
+
+Since the scatter plot did not provide detailed insights, we will create an interactive plot to better understand the relationship between officer injuries and the subjects who were arrested. This interactive plot will allow us to uncover key insights more effectively.
+
+To create an interactive plot, we utilized the Plotly library. We plotted officer injuries on the x-axis and the status of the subject being arrested on the y-axis, aiming to explore the relationship between the two variables in a visually dynamic and interactive manner.
+
+```{r}
+# Creating an interactive plot using plot_ly function from plotly package
+# Specifying data as df2_new data frame
+# Specifying x-axis as OFFICER_INJURY column from df2_new data frame using formula notation
+# Specifying y-axis as SUBJECT_WAS_ARRESTED column from df2_new data frame using formula notation
+plot_ly(df2_new, x = ~df2_new$OFFICER_INJURY, y = ~df2_new$SUBJECT_WAS_ARRESTED) |>
+
+  # Customizing plot layout, including title, x-axis title, and y-axis title
+  layout(title="Interactive Plot of Officer Injury and Subject Was Arrested",
+         xaxis = list(title = "Officer Injury"),
+         yaxis = list(title = "Subject Was Arrested"))
+```
+
+The graph visually presents compelling evidence that a significant number of subjects were arrested when officers were not injured. This suggests that subjects are more easily arrested by officers who are not injured.
+
+#### 14. Relation Between Officer Gender and Incident Reason
+
+Likewise, we created an interactive plot that displays the relationship between officer gender and incident reason. This plot allows us to visually explore any potential correlations between these two variables in an interactive manner.
+
+```{r}
+# Creating an interactive plot using plot_ly function from plotly package
+# Specifying x-axis as OFFICER_GENDER column from df2_new data frame
+# Specifying y-axis as INCIDENT_REASON column from df2_new data frame
+plot_ly(df2_new, x = ~df2_new$OFFICER_GENDER, y = ~df2_new$INCIDENT_REASON) |> 
+  # Customizing plot layout by specifying title, x-axis title, and y-axis title
+  layout(title = "Interactive Plot of Officer Gender and Incident Reason",
+         xaxis = list(title = "Officer Gender"),
+         yaxis = list(title = "Incident Reason"))
+```
+
+Through the interactive plot, we discovered that male officers are more frequently tasked with handling major incidents such as arrests or service call than female female officers. This provides insights into potential gender-based differences in the types of tasks assigned to officers based on incident reasons.
+
+## Conclusion
+
+The analysis of the data has provided several key points and insights. Firstly, the incident rate in Dallas shows a negative trend over the year, indicating a decrease in crimes. Secondly, peak incidents were observed during the hours of 17:00 and 20:00, with the highest number of incidents reported, followed by a peak at 02:00. The lowest incidents were reported at 07:00 and between the hours of 04:00 to 10:00 in the morning. Additionally, Black and Hispanic race subjects were found to commit more crimes in the month of March. Moreover, the incident rates were found to be normally distributed in the months of March, June, July, January, August, and April.
+
+Furthermore, there is a notable contrast in incident rates between Black subjects and White officers, as well as between Black officers and White subjects. Central Division has the highest number of incidents, and the trend is particularly high during the month of March in Central, Northeast, and South Central divisions. Incidents involving suspects with guns and weapons show recurring peaks in incident rates, while incidents involving mentally unstable individuals and drugs/alcohol remain relatively stable throughout the year.
+
+The time series analysis has provided valuable insights into the changing patterns of incidents and crimes over time, including trends, seasonality, and the background information of officers and subject's race. However, it is important to interpret the results with caution, as the data analyzed only covers a one-year period and may not capture all factors affecting incidents and crimes, such as seasonal patterns during the holiday season in December. Additionally, without comprehensive background information and distribution of the total population, it is challenging to draw definitive conclusions about potential racism issues in Dallas between Whites and Blacks based solely on the given data.
+
+In conclusion, the data analysis has revealed significant insights into incident rates, time patterns, and racial disparities in crimes in Dallas. However, further investigation with a broader context and comprehensive data would be necessary to gain a deeper understanding of the situation and underlying issues related to race in Dallas.
